@@ -117,7 +117,6 @@ def generar_html(df, mencion_filtrada: str = None):
       <div style="max-width:700px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 8px rgba(0,0,0,0.05);">
         <div style="background-color:#ffe600;padding:20px;text-align:center;">
           <h2>🚨 Alerta de menciones{mention_title}</h2>
-          <p>Menciones a <b>Mercado Libre / Mercado Pago / Galperin</b></p>
           <p style="font-size:12px;color:#666;">{fecha_hoy}</p>
           <div style="margin-top:10px;background:#fff9c4;border-radius:8px;padding:8px 15px;display:inline-block;">
             <b>{total_tweets}</b> tweets • <b>{total_impresiones:,}</b> impresiones • <b>{total_interacciones:,}</b> interacciones
