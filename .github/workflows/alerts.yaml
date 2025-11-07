@@ -1,14 +1,14 @@
-
 name: Alerta de menciones
 
 on:
   schedule:
-    - cron: "0 10 * * *"  # Todos los días a las 10:00 UTC
+    - cron: "0 10-25 * * *"  # Cada hora entre las 10:00 y 01:00 UTC (7:00-22:00 ART)
   workflow_dispatch:      # Permite ejecutarlo manualmente también
 
 jobs:
   ejecutar-alerta:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout del repositorio
@@ -36,4 +36,4 @@ jobs:
           TO_EMAILS_MP: ${{ vars.TO_EMAILS_MP }}
           TO_EMAILS_GALPERIN: ${{ vars.TO_EMAILS_GALPERIN }}
           USUARIOS: ${{ vars.USUARIOS }}
-        run: python scraper_ml.py
+        run: python scraper_mp.py
