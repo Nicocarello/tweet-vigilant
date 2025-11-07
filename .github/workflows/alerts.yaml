@@ -2,8 +2,12 @@ name: Alerta de menciones
 
 on:
   schedule:
-    - cron: "0 10-25 * * *"  # Cada hora entre las 10:00 y 01:00 UTC (7:00-22:00 ART)
-  workflow_dispatch:      # Permite ejecutarlo manualmente también
+    - cron: "0 11-25 * * *"  # Cada hora entre 07:00 y 23:00 hora Argentina (UTC 10-26)
+  workflow_dispatch:          # Permite ejecutarlo manualmente también
+
+concurrency:
+  group: alerta-menciones
+  cancel-in-progress: true    # Evita ejecuciones solapadas
 
 jobs:
   ejecutar-alerta:
@@ -36,4 +40,19 @@ jobs:
           TO_EMAILS_MP: ${{ vars.TO_EMAILS_MP }}
           TO_EMAILS_GALPERIN: ${{ vars.TO_EMAILS_GALPERIN }}
           USUARIOS: ${{ vars.USUARIOS }}
-        run: python scraper_mp.py
+        run: |
+          echo "🚀 Iniciando ejecución de alerta de menciones..."
+          python scraper_ml.py > salida.log 2>&1
+          echo "✅ Ejecución completada."
+
+      - name: Subir logs como artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-alerta
+          path: salida.log
+
+      - name: Notificar en caso de fallo
+        if: failure()
+        run: |
+          echo "⚠️ El workflow de alerta falló en $(date). Revisar logs en GitHub Actions."
