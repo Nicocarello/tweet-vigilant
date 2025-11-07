@@ -2,15 +2,18 @@ from apify_client import ApifyClient
 import pandas as pd
 import numpy as np
 import os
+import sys
+import time
+import traceback
 from datetime import datetime, date
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
+# --- CARGA DE VARIABLES DE ENTORNO ---
 load_dotenv()
 
-# --- CONFIGURACIÓN ---
 APIFY_API = os.getenv("APIFY_API")
 ACTOR_ID = os.getenv("ACTOR_ID")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -18,38 +21,45 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 FROM_EMAIL = os.getenv("FROM_EMAIL")
 PASSWORD = os.getenv("PASSWORD")
 
-TO_EMAILS_MELI = os.getenv("TO_EMAILS_MELI", "").split(",")
-TO_EMAILS_MP = os.getenv("TO_EMAILS_MP", "").split(",")
-TO_EMAILS_GALPERIN = os.getenv("TO_EMAILS_GALPERIN", "").split(",")
+TO_EMAILS_MELI = [e.strip() for e in os.getenv("TO_EMAILS_MELI", "").split(",") if e.strip()]
+TO_EMAILS_MP = [e.strip() for e in os.getenv("TO_EMAILS_MP", "").split(",") if e.strip()]
+TO_EMAILS_GALPERIN = [e.strip() for e in os.getenv("TO_EMAILS_GALPERIN", "").split(",") if e.strip()]
 
 client = ApifyClient(APIFY_API)
 
 
-# --- FUNCIONES AUXILIARES ---
-def ejecutar_actor(lista_usuarios):
-    """Ejecuta el actor de Apify con los parámetros definidos."""
+# --- UTILIDADES DE LOGGING ---
+def log(msg: str):
+    """Imprime mensajes con timestamp para mejor trazabilidad."""
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+
+
+# --- EJECUCIÓN DE ACTOR EN APIFY ---
+def ejecutar_actor(lista_usuarios, max_reintentos=3):
     fecha_desde = date.today().strftime("%Y-%m-%d")
     frase_busqueda = '("mercado libre" OR "mercado pago" OR "mercadolibre" OR "mercadopago" OR "galperin")'
-
     terminos = [f"since:{fecha_desde} from:{u} {frase_busqueda}" for u in lista_usuarios]
-    run_input = {
-        "maxItems": 1_000_000,
-        "queryType": "Top",
-        "searchTerms": terminos,
-    }
+    run_input = {"maxItems": 1_000_000, "queryType": "Top", "searchTerms": terminos}
 
-    print(f"▶ Ejecutando actor {ACTOR_ID}...")
-    try:
-        run = client.actor(ACTOR_ID).call(run_input=run_input)
-        print(f"Actor ejecutado. ID: {run['id']}")
-        return run
-    except Exception as e:
-        print(f"❌ Error ejecutando actor: {e}")
-        return None
+    for intento in range(1, max_reintentos + 1):
+        try:
+            log(f"▶ Ejecutando actor {ACTOR_ID} (intento {intento})...")
+            run = client.actor(ACTOR_ID).call(run_input=run_input)
+            log(f"✅ Actor ejecutado. ID: {run['id']}")
+            return run
+        except Exception as e:
+            log(f"⚠️ Error al ejecutar actor (intento {intento}): {e}")
+            if intento < max_reintentos:
+                time.sleep(5 * intento)
+            else:
+                log("❌ Error persistente ejecutando actor.")
+                traceback.print_exc()
+                sys.exit(1)
 
 
+# --- PROCESAMIENTO DE DATASET ---
 def procesar_dataset(run_id):
-    """Descarga y limpia los datos del dataset de Apify."""
+    """Descarga, limpia y estructura los datos del dataset."""
     try:
         items = client.run(run_id).dataset().list_items().items
         if not items:
@@ -58,18 +68,18 @@ def procesar_dataset(run_id):
         df = pd.DataFrame(items)
         df = df[df['type'] != 'mock_tweet'].drop_duplicates(subset='url')
 
-        df = df.assign(
-            userName=df['author'].apply(lambda a: a.get('userName') if isinstance(a, dict) else None),
-            followers=df['author'].apply(lambda a: a.get('followers') if isinstance(a, dict) else None),
-            profilePicture=df['author'].apply(lambda a: a.get('profilePicture') if isinstance(a, dict) else None),
-            createdAt=pd.to_datetime(df['createdAt'], format='%a %b %d %H:%M:%S %z %Y').dt.strftime('%Y-%m-%d %H:%M:%S')
-        )
+        # Expande los datos del autor (más rápido que apply)
+        df_author = pd.json_normalize(df['author'])
+        df = pd.concat([df, df_author[['userName', 'followers', 'profilePicture']]], axis=1)
 
-        # Calcular interacciones y compartidos
+        df['createdAt'] = pd.to_datetime(df['createdAt'], format='%a %b %d %H:%M:%S %z %Y', errors='coerce')
+        df['createdAt'] = df['createdAt'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Interacciones
         df['interacciones'] = df[['likeCount', 'retweetCount', 'replyCount', 'quoteCount', 'bookmarkCount']].sum(axis=1)
         df['compartidos'] = df['retweetCount'] + df['quoteCount']
 
-        # Detectar mención (vectorizado)
+        # Detección de menciones (vectorizada)
         condiciones = [
             df['text'].str.contains('galperin', case=False, na=False),
             df['text'].str.contains('mercado libre', case=False, na=False),
@@ -80,21 +90,23 @@ def procesar_dataset(run_id):
         valores = ["Galperin", "Mercado Libre", "Mercadolibre", "Mercado Pago", "Mercadopago"]
         df['mencion'] = np.select(condiciones, valores, default=None)
 
-        # Ordenar y seleccionar columnas
         columnas = [
             'userName', 'followers', 'text', 'createdAt', 'url', 'likeCount',
-            'retweetCount', 'replyCount', 'quoteCount', 'bookmarkCount', 'viewCount',
-            'interacciones', 'compartidos', 'profilePicture', 'mencion'
+            'retweetCount', 'replyCount', 'quoteCount', 'bookmarkCount',
+            'viewCount', 'interacciones', 'compartidos', 'profilePicture', 'mencion'
         ]
-        return df[columnas].sort_values(by='viewCount', ascending=False).reset_index(drop=True)
+        df = df[columnas].sort_values(by='viewCount', ascending=False).reset_index(drop=True)
+        return df
 
     except Exception as e:
-        print(f"❌ Error procesando dataset: {e}")
+        log(f"❌ Error procesando dataset: {e}")
+        traceback.print_exc()
         return pd.DataFrame()
 
 
+# --- GENERACIÓN DE HTML ---
 def generar_html(df):
-    """Genera el cuerpo HTML del mail con las menciones."""
+    """Crea el HTML del mail."""
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
     total_tweets = len(df)
     total_impresiones = int(df["viewCount"].sum())
@@ -116,7 +128,11 @@ def generar_html(df):
 
     cards = []
     for _, row in df.iterrows():
-        img_html = f'<img src="{row["profilePicture"]}" width="55" height="55" style="border-radius:50%;margin-right:12px;border:2px solid #eee;">' if row["profilePicture"] else ""
+        img_html = (
+            f'<img src="{row["profilePicture"]}" width="55" height="55" '
+            f'style="border-radius:50%;margin-right:12px;border:2px solid #eee;">'
+            if row["profilePicture"] else ""
+        )
         card = f"""
         <div style="background:#fafafa;border:1px solid #e0e0e0;border-radius:10px;padding:15px 20px;margin-bottom:15px;">
             <div style="display:flex;align-items:center;">{img_html}
@@ -142,8 +158,9 @@ def generar_html(df):
     return header + "".join(cards) + footer
 
 
+# --- ENVÍO DE EMAIL ---
 def enviar_email(cuerpo_html, destinatarios, asunto):
-    """Envía el email HTML con las menciones."""
+    """Envía el correo HTML."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = asunto
     msg["From"] = FROM_EMAIL
@@ -155,20 +172,45 @@ def enviar_email(cuerpo_html, destinatarios, asunto):
             server.starttls()
             server.login(FROM_EMAIL, PASSWORD)
             server.sendmail(FROM_EMAIL, destinatarios, msg.as_string())
-        print(f"✅ Correo enviado a {len(destinatarios)} destinatarios.")
+        log(f"✅ Correo enviado a {len(destinatarios)} destinatarios.")
     except Exception as e:
-        print(f"❌ Error enviando correo: {e}")
+        log(f"❌ Error enviando correo: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 
-# --- EJECUCIÓN ---
+# --- EJECUCIÓN PRINCIPAL ---
 if __name__ == "__main__":
-    lista_usuarios = os.getenv("USUARIOS", "").split(",")
-    run = ejecutar_actor(lista_usuarios)
+    log("🚀 Iniciando alerta de menciones.")
 
-    if run:
-        df = procesar_dataset(run["id"])
-        if not df.empty:
-            cuerpo_html = generar_html(df)
-            enviar_email(cuerpo_html, TO_EMAILS_MELI, "🚨Alerta Mención Personalidad Relevante🚨")
-        else:
-            print("No se encontraron menciones relevantes hoy.")
+    lista_usuarios = [u.strip() for u in os.getenv("USUARIOS", "").split(",") if u.strip()]
+    if not lista_usuarios:
+        log("⚠️ No se definieron usuarios en USUARIOS.")
+        sys.exit(1)
+
+    run = ejecutar_actor(lista_usuarios)
+    if not run:
+        log("❌ Falló la ejecución del actor.")
+        sys.exit(1)
+
+    df = procesar_dataset(run["id"])
+    if df.empty:
+        log("No se encontraron menciones relevantes hoy.")
+        sys.exit(0)
+
+    # Verificar duplicados (hash)
+    hash_actual = hash(df.to_json())
+    hash_file = "last_hash.txt"
+    if os.path.exists(hash_file):
+        with open(hash_file) as f:
+            if f.read() == str(hash_actual):
+                log("🔁 Sin cambios desde la última ejecución. No se envía correo.")
+                sys.exit(0)
+
+    with open(hash_file, "w") as f:
+        f.write(str(hash_actual))
+
+    cuerpo_html = generar_html(df)
+    enviar_email(cuerpo_html, TO_EMAILS_MELI, "🚨Alerta Mención Personalidad Relevante🚨")
+
+    log("✅ Proceso finalizado correctamente.")
