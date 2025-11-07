@@ -2,7 +2,8 @@ name: Alerta de menciones
 
 on:
   schedule:
-    - cron: "0 11-25 * * *"  # Cada hora entre 07:00 y 23:00 hora Argentina (UTC 10-26)
+    - cron: "0 11-23 * * *"  # 07:00–20:00 ART (10–23 UTC)
+    - cron: "0 0-1 * * *"    # 21:00–23:00 ART (00–02 UTC)
   workflow_dispatch:          # Permite ejecutarlo manualmente también
 
 concurrency:
