@@ -36,4 +36,4 @@ jobs:
           TO_EMAILS_MP: ${{ vars.TO_EMAILS_MP }}
           TO_EMAILS_GALPERIN: ${{ vars.TO_EMAILS_GALPERIN }}
           USUARIOS: ${{ vars.USUARIOS }}
-        run: python alerta_personalidades.py
+        run: python scraper_ml.py
