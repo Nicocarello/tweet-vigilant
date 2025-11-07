@@ -1,1 +1,39 @@
 
+name: Alerta de menciones
+
+on:
+  schedule:
+    - cron: "0 10 * * *"  # Todos los días a las 10:00 UTC
+  workflow_dispatch:      # Permite ejecutarlo manualmente también
+
+jobs:
+  ejecutar-alerta:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install apify-client pandas python-dotenv
+
+      - name: Ejecutar script de alertas
+        env:
+          APIFY_API: ${{ secrets.APIFY_API }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          ACTOR_ID: ${{ vars.ACTOR_ID }}
+          TO_EMAILS_MELI: ${{ vars.TO_EMAILS_MELI }}
+          TO_EMAILS_MP: ${{ vars.TO_EMAILS_MP }}
+          TO_EMAILS_GALPERIN: ${{ vars.TO_EMAILS_GALPERIN }}
+          USUARIOS: ${{ vars.USUARIOS }}
+        run: python alerta_personalidades.py
