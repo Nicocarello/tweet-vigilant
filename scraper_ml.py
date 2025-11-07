@@ -79,16 +79,15 @@ def procesar_dataset(run_id):
         df['interacciones'] = df[['likeCount', 'retweetCount', 'replyCount', 'quoteCount', 'bookmarkCount']].sum(axis=1)
         df['compartidos'] = df['retweetCount'] + df['quoteCount']
 
-        # Detección de menciones (vectorizada)
+        # Detección de menciones (unificadas)
         condiciones = [
             df['text'].str.contains('galperin', case=False, na=False),
-            df['text'].str.contains('mercado libre', case=False, na=False),
-            df['text'].str.contains('mercadolibre', case=False, na=False),
-            df['text'].str.contains('mercado pago', case=False, na=False),
-            df['text'].str.contains('mercadopago', case=False, na=False),
+            df['text'].str.contains('mercado libre|mercadolibre', case=False, na=False),
+            df['text'].str.contains('mercado pago|mercadopago', case=False, na=False),
         ]
-        valores = ["Galperin", "Mercado Libre", "Mercadolibre", "Mercado Pago", "Mercadopago"]
+        valores = ["Galperin", "Mercado Libre", "Mercado Pago"]
         df['mencion'] = np.select(condiciones, valores, default=None)
+
 
         columnas = [
             'userName', 'followers', 'text', 'createdAt', 'url', 'likeCount',
