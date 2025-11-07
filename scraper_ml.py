@@ -104,18 +104,19 @@ def procesar_dataset(run_id):
 
 
 # --- GENERACIÓN DE HTML ---
-def generar_html(df):
-    """Crea el HTML del mail."""
+def generar_html(df, mencion_filtrada: str = None):
+    """Crea el HTML del mail. Si se pasa mencion_filtrada, la muestra en el header."""
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
     total_tweets = len(df)
     total_impresiones = int(df["viewCount"].sum())
     total_interacciones = int(df["interacciones"].sum())
 
+    mention_title = f" - {mencion_filtrada}" if mencion_filtrada else ""
     header = f"""
     <div style="font-family:Arial,sans-serif;background-color:#f4f6f8;padding:20px;">
       <div style="max-width:700px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 8px rgba(0,0,0,0.05);">
         <div style="background-color:#ffe600;padding:20px;text-align:center;">
-          <h2>🚨 Alerta de menciones - Personalidades</h2>
+          <h2>🚨 Alerta de menciones{mention_title}</h2>
           <p>Menciones a <b>Mercado Libre / Mercado Pago / Galperin</b></p>
           <p style="font-size:12px;color:#666;">{fecha_hoy}</p>
           <div style="margin-top:10px;background:#fff9c4;border-radius:8px;padding:8px 15px;display:inline-block;">
@@ -124,7 +125,7 @@ def generar_html(df):
         </div>
         <div style="padding:20px;">
     """
-
+    # (el resto del body queda igual — no hace falta tocarlo)
     cards = []
     for _, row in df.iterrows():
         img_html = (
@@ -197,19 +198,45 @@ if __name__ == "__main__":
         log("No se encontraron menciones relevantes hoy.")
         sys.exit(0)
 
-    # Verificar duplicados (hash)
-    hash_actual = hash(df.to_json())
-    hash_file = "last_hash.txt"
-    if os.path.exists(hash_file):
-        with open(hash_file) as f:
-            if f.read() == str(hash_actual):
-                log("🔁 Sin cambios desde la última ejecución. No se envía correo.")
-                sys.exit(0)
+    # --- ENVÍO POR MENCIONES (se envía un correo por cada mención relevante) ---
+    menciones_y_destinatarios = {
+        "Mercado Libre": TO_EMAILS_MELI,
+        "Mercado Pago": TO_EMAILS_MP,
+        "Galperin": TO_EMAILS_GALPERIN,
+    }
+    
+    for mencion_nombre, destinatarios in menciones_y_destinatarios.items():
+        df_m = df[df['mencion'] == mencion_nombre]
+        if df_m.empty:
+            log(f"ℹ️ No hay menciones para '{mencion_nombre}'. No se envía correo.")
+            continue
+    
+        if not destinatarios:
+            log(f"⚠️ No hay destinatarios configurados para '{mencion_nombre}'. Saltando envío.")
+            continue
+    
+        # Calcular hash por grupo para evitar reenvíos duplicados
+        hash_actual = hash(df_m.to_json())
+        safe_name = mencion_nombre.replace(" ", "_")
+        hash_file = f"last_hash_{safe_name}.txt"
+    
+        if os.path.exists(hash_file):
+            with open(hash_file, "r") as f:
+                last_hash = f.read().strip()
+            if last_hash == str(hash_actual):
+                log(f"🔁 Sin cambios en '{mencion_nombre}' desde la última ejecución. No se envía correo.")
+                continue
+    
+        # Guardar nuevo hash
+        with open(hash_file, "w") as f:
+            f.write(str(hash_actual))
+    
+        # Generar y enviar correo
+        cuerpo_html = generar_html(df_m, mencion_filtrada=mencion_nombre)
+        asunto = f"🚨 Alerta Mención — {mencion_nombre} 🚨"
+        try:
+            enviar_email(cuerpo_html, destinatarios, asunto)
+            log(f"✅ Enviado correo para '{mencion_nombre}' a {len(destinatarios)} destinatarios.")
+        except Exception as e:
+            log(f"❌ Error enviando correo para '{mencion_nombre}': {e}")
 
-    with open(hash_file, "w") as f:
-        f.write(str(hash_actual))
-
-    cuerpo_html = generar_html(df)
-    enviar_email(cuerpo_html, TO_EMAILS_MELI, "🚨Alerta Mención Personalidad Relevante🚨")
-
-    log("✅ Proceso finalizado correctamente.")
