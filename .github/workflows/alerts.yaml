@@ -1,58 +1,58 @@
-name: Alerta de menciones
+# name: Alerta de menciones
 
-on:
-  schedule:
-    - cron: "0 13,16,20,23 * * 6,0"  # 08:00–20:00 ART (10–23 UTC)
-  workflow_dispatch:          # Permite ejecutarlo manualmente también
+# on:
+#   schedule:
+#     - cron: "0 13,16,20,23 * * 6,0"  # 08:00–20:00 ART (10–23 UTC)
+#   workflow_dispatch:          # Permite ejecutarlo manualmente también
 
-concurrency:
-  group: alerta-menciones
-  cancel-in-progress: true    # Evita ejecuciones solapadas
+# concurrency:
+#   group: alerta-menciones
+#   cancel-in-progress: true    # Evita ejecuciones solapadas
 
-jobs:
-  ejecutar-alerta:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+# jobs:
+#   ejecutar-alerta:
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 30
 
-    steps:
-      - name: Checkout del repositorio
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout del repositorio
+#         uses: actions/checkout@v4
 
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+#       - name: Configurar Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
 
-      - name: Instalar dependencias
-        run: |
-          python -m pip install --upgrade pip
-          pip install apify-client pandas python-dotenv
+#       - name: Instalar dependencias
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install apify-client pandas python-dotenv
 
-      - name: Ejecutar script de alertas
-        env:
-          APIFY_API: ${{ secrets.APIFY_API }}
-          PASSWORD: ${{ secrets.PASSWORD }}
-          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          ACTOR_ID: ${{ vars.ACTOR_ID }}
-          TO_EMAILS_MELI: ${{ vars.TO_EMAILS_MELI }}
-          TO_EMAILS_MP: ${{ vars.TO_EMAILS_MP }}
-          TO_EMAILS_GALPERIN: ${{ vars.TO_EMAILS_GALPERIN }}
-          USUARIOS: ${{ vars.USUARIOS }}
-        run: |
-          echo "🚀 Iniciando ejecución de alerta de menciones..."
-          python scraper_ml.py > salida.log 2>&1
-          echo "✅ Ejecución completada."
+#       - name: Ejecutar script de alertas
+#         env:
+#           APIFY_API: ${{ secrets.APIFY_API }}
+#           PASSWORD: ${{ secrets.PASSWORD }}
+#           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+#           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+#           SMTP_PORT: ${{ secrets.SMTP_PORT }}
+#           ACTOR_ID: ${{ vars.ACTOR_ID }}
+#           TO_EMAILS_MELI: ${{ vars.TO_EMAILS_MELI }}
+#           TO_EMAILS_MP: ${{ vars.TO_EMAILS_MP }}
+#           TO_EMAILS_GALPERIN: ${{ vars.TO_EMAILS_GALPERIN }}
+#           USUARIOS: ${{ vars.USUARIOS }}
+#         run: |
+#           echo "🚀 Iniciando ejecución de alerta de menciones..."
+#           python scraper_ml.py > salida.log 2>&1
+#           echo "✅ Ejecución completada."
 
-      - name: Subir logs como artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs-alerta
-          path: salida.log
+#       - name: Subir logs como artifact
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: logs-alerta
+#           path: salida.log
 
-      - name: Notificar en caso de fallo
-        if: failure()
-        run: |
-          echo "⚠️ El workflow de alerta falló en $(date). Revisar logs en GitHub Actions."
+#       - name: Notificar en caso de fallo
+#         if: failure()
+#         run: |
+#           echo "⚠️ El workflow de alerta falló en $(date). Revisar logs en GitHub Actions."
